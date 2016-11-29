@@ -23,6 +23,13 @@ import re
 import tempfile
 import urlparse
 
+import datetime
+import time
+import hmac
+import base64
+import urllib2
+from hashlib import sha1
+
 import eventlet
 from oslo_config import cfg
 from oslo_utils import netutils
@@ -78,6 +85,8 @@ _S3_OPTS = [
     cfg.IntOpt('s3_store_thread_pools', default=DEFAULT_THREAD_POOLS,
                help=_('The number of thread pools to perform a multipart '
                       'upload in S3.')),
+    cfg.IntOpt('s3_store_presigned_expires_in', default=604800,
+               help=_('Number of seconds presigned url will be valid for.')),
 ]
 
 
@@ -691,6 +700,37 @@ class Store(glance_store.driver.Store):
         LOG.debug(msg)
 
         return key.delete()
+
+
+    def _presign(self, access_key, secret_key, bucket, key, expires_in):
+	#echo -e -n "GET\n\n\n$valid_till\n/$bucket/$object" | openssl sha1 -binary -hmac "$secret_key"
+        #base64 encode above
+        '''
+        JCS-DSS-Endpoint/bucket-name/object-name?Signature=signature-generated-asmentioned-above&Expires=datetime-in-epoch-time-format&JCSAccessKeyId=youraccess-key-id
+        GET\n\n\n1457429998\n/testbucket/test-object
+        '''
+        valid_till     = time.mktime((datetime.datetime.now() + datetime.timedelta(seconds=expires_in)).timetuple())
+	string_to_sign = ("GET\n\n\n%d\n/%s/%s" %(valid_till, bucket, key)).encode('utf8')
+	signature      = hmac.new(secret_key, digestmod=sha1)
+	signature.update(string_to_sign)
+	b64_signature  = urllib2.quote(base64.encodestring(signature.digest()).strip())
+        pre_url        = "%s/%s?Signature=%s&Expires=%d&JCSAccessKeyId=%s"%(bucket, key, b64_signature, valid_till, access_key)
+        return pre_url
+
+    def _get_http_prefix(self, scheme):
+        if scheme == 's3+https':
+           return 'https://'
+        else:
+           return 'http://'
+
+    def get_direct_link(self, location, context=None):
+	loc = location.store_location
+        expires_in = self._option_get('s3_store_presigned_expires_in')
+        url = self._presign(loc.accesskey, loc.secretkey, loc.bucket, loc.key, expires_in)
+        prefix = self._get_http_prefix(loc.scheme)
+        if loc.s3serviceurl[-1] != '/':
+            return prefix + loc.s3serviceurl + '/' + url
+        return prefix + loc.s3serviceurl + url
 
 
 def get_bucket(conn, bucket_id):

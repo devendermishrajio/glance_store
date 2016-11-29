@@ -173,3 +173,10 @@ class Store(capabilities.StoreCapability):
                       write access for an image.
         """
         raise NotImplementedError
+
+    def get_direct_link(self, location, context=None):
+        """
+        Gives direct download link for the image.
+        :image_id Image id
+        """
+        raise NotImplementedError

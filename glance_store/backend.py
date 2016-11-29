@@ -289,6 +289,10 @@ def delete_from_backend(uri, context=None):
     store = get_store_from_uri(uri)
     return store.delete(loc, context=context)
 
+def get_link_from_backend(uri, context=None):
+    loc = location.get_location_from_uri(uri, conf=CONF)
+    store = get_store_from_uri(uri)
+    return store.get_direct_link(loc, context=context)
 
 def get_store_from_location(uri):
     """
